@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <title>Login</title>
+
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+
+    <!-- Custom CSS -->
+    <style>
+        .top-alert {
+        display: none;
+        position: fixed;
+        top:5%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        padding: 15px;
+        background-color: rgba(255, 255,255 , 0.6); /* 使用 rgba 设置背景颜色，最后一个参数控制透明度 */
+        color: #000;
+        border: 1px solid #000;
+        border-radius: 5px;
+        max-width: 80%;
+        text-align: center;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+
+        margin: 0 auto;
+        }
+
+        body {
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(255, 255, 255, 0.5); /* 背景颜色透明度为 0.5 */
+            background-image: url('{{ url_for("static", filename="pexels-abdullah-ghatasheh.jpg") }}');  /* Add your background image URL here */
+            background-size: cover;
+            background-position: center;
+        }
+
+        .login-container {
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            width: 40%;
+            max-width: 400px; /* 设置最大宽度，使其不会过于宽阅读起来不舒服 */
+        }
+
+        .login-heading {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .login-form input {
+            margin-bottom: 15px;
+        }
+
+        .login-form button {
+            width: 100%;
+        }
+
+        .form-text-danger {
+            color: #dc3545;
+            font-size: 12px;
+        }
+
+        .login-footer {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .login-footer a {
+            color: #007bff;
+        }
+    </style>
+</head>
+<body>
+    <div id="top-alert" class="top-alert"></div>
+    <div class="container">
+        <div class="login-container">
+            <h1 class="login-heading">Login</h1>
+            <form method="POST" class="login-form">
+                {{ form.csrf_token }}
+                <div class="form-group">
+                    {{ form.email.label }} {{ form.email(class="form-control" ) }}
+                     <div id="email-error" class="invalid-feedback"></div>
+                </div>
+                <div class="form-group">
+                    {{ form.password.label }} {{ form.password(class="form-control") }}
+                    <div id="password-error" class="invalid-feedback"></div>
+                </div>
+                <button type="submit" class="btn btn-primary">Login</button>
+            </form>
+            <div class="login-footer">
+                <p>Don't have an account? <a href="{{ url_for('register') }}" id="register-link">Go to Register</a></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript 代码用于保存用户填写的信息并触发确认对话框 -->
+    <script>
+    const fields = {
+        email: {
+            input: $("#email"),
+            error: $("#email-error")
+        },
+        password: {
+            input: $("#password"),
+            error: $("#password-error")
+        }
+    };
+
+    function showTopAlert(message, duration) {    //显示非表单字段的错误信息
+    const topAlert = $("#top-alert");
+    topAlert.text(message);
+    topAlert.css({ opacity: 0, display: "block" }).animate({ opacity: 1 }, 300);
+
+    // 设置定时器，在一定时间后触发淡出效果
+    setTimeout(function () {
+        // 淡出并隐藏警告消息
+        topAlert.animate({ opacity: 0 }, 300, function () {
+            topAlert.css("display", "none");
+        });
+    }, duration);
+}
+
+    function autoFillFormFields() {                 //自动填充表单字段
+        var savedEmail = sessionStorage.getItem("saved_email");
+        var savedPassword = sessionStorage.getItem("saved_password");
+        if (savedEmail) {
+            document.querySelector('input[name="email"]').value = savedEmail;
+        }
+        if (savedPassword) {
+            document.querySelector('input[name="password"]').value = savedPassword;
+        }
+    }
+
+    function saveFormFields() {                   //保存表单字段至会话
+        var emailValue = document.querySelector('input[name="email"]').value;
+        var passwordValue = document.querySelector('input[name="password"]').value;
+        sessionStorage.setItem("saved_email", emailValue);
+        sessionStorage.setItem("saved_password", passwordValue);
+    }
+
+    function loginWithAJAX() {
+        var url = "{{ url_for('login') }}";
+        $.ajax({
+            type: "POST",
+            url: url,
+            data: $('form').serialize(),
+            success: function (data) {
+                // 处理登录成功的情况
+                showTopAlert(data.message,3000);
+                if (data.success) {
+                     setTimeout(function () {
+                         window.location.href = "{{ url_for('index') }}";
+                     }, 3000);
+                }
+            },
+            error: function (response) {      // 处理登录失败的情况(输入不合法)
+                if (response.status === 400) {
+                    console.log("status: 400");
+                    const errors = response.responseJSON;
+                    Object.keys(fields).forEach(function (key) {
+                        fields[key].error.html(''); // 清空错误信息内容
+                        fields[key].input.removeClass('is-invalid'); // 移除错误样式
+                    });
+                    $.each(errors, function (key, value) {
+                        if (fields[key]) {
+                            fields[key].input.addClass('is-invalid');
+                            fields[key].error.html(value);
+                        } else {
+                            console.log('Key not found in fields:', key);
+                        }
+                    });
+                    autoFillFormFields();         //从会话中读取保存的账号和密码
+                }
+            }
+        });
+    }
+
+        // 获取注册链接元素
+        var registerLink = document.getElementById("register-link");
+        // 添加点击事件处理程序
+        registerLink.addEventListener("click", function (event) {
+            event.preventDefault(); // 阻止默认跳转行为
+
+            // 弹出确认对话框，询问用户是否要保存信息
+            var saveInfo = confirm("Do you want to save your email and password for registration?");
+
+            // 如果用户同意保存信息，将信息保存在会话中
+            if (saveInfo) {
+                saveFormFields()
+            }
+
+            // 跳转到注册页面
+            window.location.href = "{{ url_for('register') }}";
+        });
+
+        //自动登录功能
+        document.addEventListener("DOMContentLoaded", function () {
+            // 获取URL参数 "login_after_register" 的值
+            var urlParams = new URLSearchParams(window.location.search);
+            var autoLogin = urlParams.get("login_after_register");
+
+            // 如果 "login_after_register" 为 "True"，则自动填写表单并自动提交登录请求
+            if (autoLogin === "True") {
+                autoFillFormFields()        //从会话中读取账号密码并自动填充
+                loginWithAJAX();              // 自动提交登录请求
+            }
+        });
+
+      //页面加载时的准备工作
+    $(document).ready(function() {
+           $('form').submit(function (e) {
+           e.preventDefault(); // 阻止默认提交
+           saveFormFields();
+           loginWithAJAX();         // 执行 performLogin 函数
+        });
+        // Inject our CSRF token into our AJAX request.
+        $.ajaxSetup({
+            beforeSend: function(xhr, settings) {
+                if (!/^(GET|HEAD|OPTIONS|TRACE)$/i.test(settings.type) && !this.crossDomain) {
+                    xhr.setRequestHeader("X-CSRFToken", "{{ form.csrf_token._value() }}")
+                }
+            }
+        })
+    });
+
+    </script>
+</body>
+</html>

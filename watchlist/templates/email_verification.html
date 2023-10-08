@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="//fonts.googleapis.com/css?family=Google+Sans_old" rel="stylesheet" type="text/css">
+    <style>
+        .google-logo {
+            width: 74px;
+            height: 24px;
+            margin-bottom: 16px;
+        }
+        .email-content {
+            font-family: 'Google Sans', Roboto, Helvetica, Arial, sans-serif;
+            border-bottom: thin solid #dadce0;
+            color: rgba(0, 0, 0, 0.87);
+            line-height: 32px;
+            padding-bottom: 24px;
+            text-align: center;
+            word-break: break-word;
+        }
+        .email-title {
+            font-size: 24px;
+        }
+        .email-footer {
+            font-family: Roboto-Regular, Helvetica, Arial, sans-serif;
+            font-size: 14px;
+            color: rgba(0, 0, 0, 0.87);
+            line-height: 20px;
+            padding-top: 20px;
+            text-align: center;
+        }
+        .email-link {
+            color:rgba(0, 0, 0, 0.87) ;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body style="margin: 0; padding: 0;" bgcolor="#FFFFFF">
+    <table width="100%" height="100%" style="min-width: 348px;" border="0" cellspacing="0" cellpadding="0" lang="en">
+        <tr height="32" style="height: 32px;">
+            <td></td>
+        </tr>
+        <tr align="center">
+            <td>
+                <img src="https://www.gstatic.com/images/branding/googlelogo/2x/googlelogo_color_74x24dp.png" alt="Google Logo" class="google-logo">
+                <div class="email-content">
+                    <div class="email-title">Your CAPTCHA is</div>
+                    <div style="font-size: 19px;">{{ verification_code }}</div>
+                    <table align="center">
+                        <tr style="line-height: normal;">
+                            <td align="right" style="padding-right: 8px;">
+                            </td>
+                            <td><a class="email-link" target="_blank">{{ email_text }}</a></td>
+                        </tr>
+                    </table>
+                    <div class="email-footer">
+                       If you did not request this verification code, you can safely ignore this email.<br>
+                        For security reasons, the verification code will expire after a short period of time.
+                    </div>
+                </div>
+                <div>
+                   You  received this email to let you know that someone is signing up for our service using your email address.<br>
+                </div>
+            </td>
+        </tr>
+        <tr height="32" style="height: 32px;">
+            <td></td>
+        </tr>
+    </table>
+</body>
+</html>
