@@ -38,7 +38,7 @@ class RegisterForm(FlaskForm):
         ],
     )
     password = PasswordField(
-        "密码", validators=[DataRequired(message="密码不能为空"), Length(1, 64)]
+        "密码", validators=[DataRequired(message="密码不能为空"), Length(6, 10)]
     )
     repeatPassword = PasswordField(
         "确认密码",
@@ -66,12 +66,10 @@ def login():
             user = User.query.get(useremail)
             if user is not None and user.validate_password(password):
                 login_user(user)  # 登入用户
-                flash("Login success.")
                 # 清除会话中的保存信息
                 session.pop("saved_email", None)
                 session.pop("saved_password", None)
                 return jsonify({"success": True, "message": "Login success."})
-            flash("Invalid username or password.")
             return jsonify(
                 {"success": False, "message": "Email or Password Invalid"}  # 如果验证失败，显示错误消息
             )  # 重定向回登录页面
@@ -102,7 +100,26 @@ def generate_verification_code():
     return verification_code
 
 
-def validate_when_send_verification(email, password, repeat_password):
+def basic_register(user_email, cached_verification_code, verification_code, password):
+    if User.query.filter_by(email=user_email).first():
+        return jsonify(
+            {"success": False, "message": "Email already registered"}
+        ), 200
+
+    if cached_verification_code is not None and cached_verification_code != verification_code:
+        return jsonify(
+            {"success": False, "message": "Wrong verification code"}
+        ), 200
+
+    user = User(email=user_email)
+    user.set_password(password)
+    db.session.add(user)
+    db.session.commit()
+    # 返回一个json
+    return jsonify({"success": True, "message": "register success"})
+
+
+def validate_registration_manually(email, password, repeat_password):
     errors = {}
 
     if not validate_email(email):
@@ -110,10 +127,11 @@ def validate_when_send_verification(email, password, repeat_password):
 
     if not password:
         errors['password'] = '密码不能为空'
+    elif len(password) < 6 or len(password) > 10:
+        errors['password'] = '密码长度必须为6到10位'
 
     if not repeat_password:
         errors['repeatPassword'] = '确认密码不能为空'
-
     elif password != repeat_password:
         errors['repeatPassword'] = '两次输入的密码不一致'
 
@@ -128,7 +146,7 @@ def send_verification_code():
     repeat_password = data.get('repeatPassword')
 
     # 验证邮箱是否有效
-    errors = validate_when_send_verification(email, password, repeat_password)
+    errors = validate_registration_manually(email, password, repeat_password)
     if errors:
         return jsonify(errors), 400
 
@@ -140,10 +158,8 @@ def send_verification_code():
 
     # 发送验证码邮件
     if send_verification_email(email, verification_code):
-        flash('Verification code sent successfully', 'success')
         return jsonify({"success": True, 'message': 'Verification code sent successfully'}), 200
     else:
-        flash('Failed to send verification code', 'success')
         return jsonify({"success": False, "message": "Failed to send verification code"}), 200
 
 
@@ -152,32 +168,14 @@ def register():
     form = RegisterForm()
     if request.method == "POST":
         if form.validate():
-            useremail = form.email.data
+            user_email = form.email.data
             password = form.password.data
             verification_code = form.verification_code.data
             cached_verification_code = memcache_client.get('email')
-            if User.query.filter_by(email=useremail).first():
-                flash("该邮箱已被注册，请换一个。", "danger")
-                return jsonify(
-                    {"success": False, "message": "Email already registered"}
-                ), 200
-
-            if cached_verification_code is not None and cached_verification_code != verification_code:
-                flash("验证码已过期，请稍后再试。", "danger")
-                return jsonify(
-                    {"success": False, "message": "Wrong verification code"}
-                ), 200
-
-            user = User(email=useremail)
-            user.set_password(password)
-            db.session.add(user)
-            db.session.commit()
-            flash("register success. Please log in")
-            # 返回一个json
-            return jsonify({"success": True, "message": "register success"})
+            basic_register(user_email, cached_verification_code, verification_code, password)
         errors = {}
         for field, messages in form.errors.items():
-            errors[field] = messages[0]  # 使用第一个错误消息，你可以根据需要修改此处
+            errors[field] = messages[0]  # 使用第一个错误消息，可以根据需要修改此处
         return jsonify(errors), 400
 
     return render_template("register.html", form=form)

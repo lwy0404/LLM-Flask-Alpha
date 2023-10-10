@@ -139,11 +139,11 @@
                      }, 3000);
                 }
             },
-            error: function (response) {      // 处理登录失败的情况(输入不合法)
+            error: function (jqXHR) {      // 处理登录失败的情况(输入不合法)
 
-                if (response.status === 400) {
+                if (jqXHR.status === 400) {
                     console.log("status: 400");
-                    const errors = response.responseJSON;
+                    const errors = jqXHR.responseJSON;
                     Object.keys(fields).forEach(function (key) {
                         fields[key].error.html(''); // 清空错误信息内容
                         fields[key].input.removeClass('is-invalid'); // 移除错误样式

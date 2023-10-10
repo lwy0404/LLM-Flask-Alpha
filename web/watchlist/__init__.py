@@ -6,7 +6,7 @@ from flask_bootstrap import Bootstrap5
 from flask_login import current_user, LoginManager
 from flask_mail import Mail
 from flask_sqlalchemy import SQLAlchemy
-
+from flask_wtf.csrf import CSRFProtect
 
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'dev')
@@ -31,6 +31,11 @@ mail = Mail(app)  # 创建邮件类对象
 app.config["MEMCACHE_SERVERS"] = ["115.157.197.84:11211"]  # Memcache 服务器的主机和端口
 app.config["MEMCACHE_TIMEOUT"] = 120  # 缓存项的默认过期时间（以秒为单位）
 memcache_client = memcache.Client(app.config['MEMCACHE_SERVERS'])
+
+csrf = CSRFProtect(app)
+
+
+# app.config['WTF_CSRF_ENABLED'] = False
 
 
 @login_manager.user_loader
