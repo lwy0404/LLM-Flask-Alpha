@@ -32,8 +32,6 @@ app.config["MEMCACHE_SERVERS"] = ["115.157.197.84:11211"]  # Memcache 服务器�
 app.config["MEMCACHE_TIMEOUT"] = 120  # 缓存项的默认过期时间（以秒为单位）
 memcache_client = memcache.Client(app.config['MEMCACHE_SERVERS'])
 
-csrf = CSRFProtect(app)
-
 
 # app.config['WTF_CSRF_ENABLED'] = False
 
@@ -52,4 +50,4 @@ def inject_user():
     return {"current_user": current_user}
 
 
-from watchlist import views
+from watchlist import views, app_views

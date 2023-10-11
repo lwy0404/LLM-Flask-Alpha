@@ -23,14 +23,14 @@ def validate_login_manually(email, password):
 
     if not password:
         errors['password'] = '密码不能为空'
-    elif len(password) < 6 or len(password) > 10:
-        errors['password'] = '密码长度必须为6到10位'
+    elif len(password) < 1 or len(password) > 10:
+        errors['password'] = '密码长度必须为1到10位'
     return errors
 
 
-@app.route("/login-for-app", methods=["POST"])
+@app.route("/login_for_app", methods=["POST"])
 def app_login():
-    data = request.form
+    data = request.get_json()
     user_email = data.get('email')
     password = data.get('password')
 
@@ -48,9 +48,9 @@ def app_login():
     ), 400
 
 
-@app.route("/register-for-app", methods=["POST"])
+@app.route("/register_for_app", methods=["POST"])
 def app_register():
-    data = request.form
+    data = request.get_json()
     user_email = data.get('email')
     password = data.get('password')
     repeat_password = data.get('repeatPassword')
@@ -62,3 +62,4 @@ def app_register():
         return jsonify(errors), 400
 
     basic_register(user_email, cached_verification_code, verification_code, password)
+

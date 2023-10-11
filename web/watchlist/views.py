@@ -38,7 +38,7 @@ class RegisterForm(FlaskForm):
         ],
     )
     password = PasswordField(
-        "密码", validators=[DataRequired(message="密码不能为空"), Length(6, 10)]
+        "密码", validators=[DataRequired(message="密码不能为空"), Length(1, 10)]
     )
     repeatPassword = PasswordField(
         "确认密码",
@@ -127,8 +127,8 @@ def validate_registration_manually(email, password, repeat_password):
 
     if not password:
         errors['password'] = '密码不能为空'
-    elif len(password) < 6 or len(password) > 10:
-        errors['password'] = '密码长度必须为6到10位'
+    elif len(password) < 1 or len(password) > 10:
+        errors['password'] = '密码长度必须为1到10位'
 
     if not repeat_password:
         errors['repeatPassword'] = '确认密码不能为空'
@@ -192,3 +192,5 @@ def logout():
 @login_required  # 视图保护
 def index():
     return render_template("index.html")
+
+
