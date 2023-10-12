@@ -141,6 +141,8 @@ def validate_registration_manually(email, password, repeat_password):
 @app.route("/send_verification_code", methods=["POST"])
 def send_verification_code():
     data = request.form
+    if not data:
+        data = request.get_json()
     email = data.get('email')
     password = data.get('password')
     repeat_password = data.get('repeatPassword')
@@ -192,5 +194,3 @@ def logout():
 @login_required  # 视图保护
 def index():
     return render_template("index.html")
-
-
