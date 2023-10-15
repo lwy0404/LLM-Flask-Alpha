@@ -2,7 +2,6 @@ from datetime import datetime
 import random
 from smtplib import SMTPException
 
-
 from sqlalchemy.exc import SQLAlchemyError
 from validate_email import validate_email
 from watchlist import app, db, LLM_API_URL, memcache_client, mail
@@ -13,7 +12,7 @@ from wtforms import StringField, SubmitField, PasswordField
 from wtforms.validators import DataRequired, Length, Email, EqualTo, Regexp
 
 from watchlist.views import validate_registration_manually, generate_verification_code, send_verification_email, \
-    basic_register
+    basic_register, basic_send_verification_code
 
 
 def validate_login_manually(email, password):
@@ -63,3 +62,16 @@ def app_register():
 
     basic_register(user_email, cached_verification_code, verification_code, password)
 
+
+@app.route("/send_verification_code_for_app", methods=["POST"])
+def send_verification_code():
+    data = request.get_json()
+    email = data.get('email')
+    # password = data.get('password')
+    # repeat_password = data.get('repeatPassword')
+
+    # 验证邮箱是否有效
+    # errors = validate_registration_manually(email, password, repeat_password)
+    # if errors:
+    #   return jsonify(errors), 400
+    basic_send_verification_code(email)

@@ -138,6 +138,20 @@ def validate_registration_manually(email, password, repeat_password):
     return errors
 
 
+def basic_send_verification_code(email):
+    # 生成验证码
+    verification_code = generate_verification_code()
+
+    # 保存验证码到 Memcache
+    memcache_client.set(email, verification_code, time=120)  # 保存2分钟，可以根据需求修改
+
+    # 发送验证码邮件
+    if send_verification_email(email, verification_code):
+        return jsonify({"success": True, 'message': 'Verification code sent successfully'}), 200
+    else:
+        return jsonify({"success": False, "message": "Failed to send verification code"}), 200
+
+
 @app.route("/send_verification_code", methods=["POST"])
 def send_verification_code():
     data = request.form
@@ -151,19 +165,7 @@ def send_verification_code():
     errors = validate_registration_manually(email, password, repeat_password)
     if errors:
         return jsonify(errors), 400
-
-    # 生成验证码
-    verification_code = generate_verification_code()
-
-    # 保存验证码到 Memcache
-    memcache_client.set(email, verification_code, time=120)  # 保存2分钟，可以根据需求修改
-
-    # 发送验证码邮件
-    if send_verification_email(email, verification_code):
-        return jsonify({"success": True, 'message': 'Verification code sent successfully'}), 200
-    else:
-        return jsonify({"success": False, "message": "Failed to send verification code"}), 200
-
+    basic_send_verification_code(email)
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
