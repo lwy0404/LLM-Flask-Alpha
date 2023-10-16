@@ -3,7 +3,6 @@ import random
 from smtplib import SMTPException
 
 from flask_mail import Message
-from flask_wtf import FlaskForm
 from sqlalchemy.exc import SQLAlchemyError
 from validate_email import validate_email
 from watchlist import app, db, LLM_API_URL, memcache_client, mail
@@ -61,24 +60,75 @@ def login():
     form = LoginForm()
     if request.method == "POST":
         if form.validate():
-            useremail = form.email.data
+            user_email = form.email.data
             password = form.password.data
-            user = User.query.get(useremail)
-            if user is not None and user.validate_password(password):
-                login_user(user)  # 登入用户
-                # 清除会话中的保存信息
-                session.pop("saved_email", None)
-                session.pop("saved_password", None)
-                return jsonify({"success": True, "message": "Login success."})
-            return jsonify(
-                {"success": False, "message": "Email or Password Invalid"}  # 如果验证失败，显示错误消息
-            )  # 重定向回登录页面
+            basic_login(user_email, password)
         errors = {}
         for field, messages in form.errors.items():
             errors[field] = messages[0]  # 使用第一个错误消息
         return jsonify(errors), 400
 
     return render_template("login.html", form=form)
+
+
+@app.route("/send_verification_code", methods=["POST"])
+def send_verification_code():
+    data = request.form
+    if not data:
+        data = request.get_json()
+    email = data.get('email')
+    password = data.get('password')
+    repeat_password = data.get('repeatPassword')
+
+    # 验证邮箱是否有效
+    errors = validate_registration_manually(email, password, repeat_password)
+    if errors:
+        return jsonify(errors), 400
+    basic_send_verification_code(email)
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    form = RegisterForm()
+    if request.method == "POST":
+        if form.validate():
+            user_email = form.email.data
+            password = form.password.data
+            verification_code = form.verification_code.data
+            cached_verification_code = memcache_client.get(user_email)
+            basic_register(user_email, cached_verification_code, verification_code, password)
+        errors = {}
+        for field, messages in form.errors.items():
+            errors[field] = messages[0]  # 使用第一个错误消息，可以根据需要修改此处
+        return jsonify(errors), 400
+
+    return render_template("register.html", form=form)
+
+
+@app.route("/logout", methods=["GET"])
+@login_required  # 视图保护
+def logout():
+    logout_user()  # 登出用户
+    return jsonify({"success": True, "message": "Log out successful"}), 200
+
+
+@app.route("/index", methods=["GET"])
+@login_required  # 视图保护
+def index():
+    return render_template("index.html")
+
+
+def basic_login(user_email, password):
+    user = User.query.get(user_email)
+    if user is not None and user.validate_password(password):
+        login_user(user)  # 登入用户
+        # 清除会话中的保存信息
+        # session.pop("saved_email", None)
+        # session.pop("saved_password", None)
+        return jsonify({"success": True, "message": "Login success."})
+    return jsonify(
+        {"success": False, "message": "Email or Password Invalid"}  # 如果验证失败，显示错误消息
+    )
 
 
 def send_verification_email(email, verification_code):
@@ -101,20 +151,21 @@ def generate_verification_code():
 
 
 def basic_register(user_email, cached_verification_code, verification_code, password):
+    verification_code_error = {}
     if User.query.filter_by(email=user_email).first():
         return jsonify(
             {"success": False, "message": "Email already registered"}
         ), 200
 
-    if cached_verification_code is not None and cached_verification_code != verification_code:
-        return jsonify(
-            {"success": False, "message": "Wrong verification code"}
-        ), 200
+    check_verification_code(verification_code_error, cached_verification_code, verification_code)
+    if verification_code_error:
+        return jsonify(verification_code_error), 400
 
     user = User(email=user_email)
     user.set_password(password)
     db.session.add(user)
     db.session.commit()
+    memcache_client.delete(user_email)
     # 返回一个json
     return jsonify({"success": True, "message": "register success"})
 
@@ -152,47 +203,12 @@ def basic_send_verification_code(email):
         return jsonify({"success": False, "message": "Failed to send verification code"}), 200
 
 
-@app.route("/send_verification_code", methods=["POST"])
-def send_verification_code():
-    data = request.form
-    if not data:
-        data = request.get_json()
-    email = data.get('email')
-    password = data.get('password')
-    repeat_password = data.get('repeatPassword')
+def check_verification_code(verification_code_error, cached_verification_code, verification_code):
+    if cached_verification_code is None:
+        verification_code_error['success'] = 'False'
+        verification_code_error['message'] = 'Not send verification code yet'
 
-    # 验证邮箱是否有效
-    errors = validate_registration_manually(email, password, repeat_password)
-    if errors:
-        return jsonify(errors), 400
-    basic_send_verification_code(email)
-
-@app.route("/register", methods=["GET", "POST"])
-def register():
-    form = RegisterForm()
-    if request.method == "POST":
-        if form.validate():
-            user_email = form.email.data
-            password = form.password.data
-            verification_code = form.verification_code.data
-            cached_verification_code = memcache_client.get('email')
-            basic_register(user_email, cached_verification_code, verification_code, password)
-        errors = {}
-        for field, messages in form.errors.items():
-            errors[field] = messages[0]  # 使用第一个错误消息，可以根据需要修改此处
-        return jsonify(errors), 400
-
-    return render_template("register.html", form=form)
-
-
-@app.route("/logout", methods=["GET"])
-@login_required  # 视图保护
-def logout():
-    logout_user()  # 登出用户
-    return jsonify({"success": True, "message": "Log out successful"}), 200
-
-
-@app.route("/index", methods=["GET"])
-@login_required  # 视图保护
-def index():
-    return render_template("index.html")
+    if cached_verification_code != verification_code:
+        verification_code_error['success'] = 'False'
+        verification_code_error['message'] = 'Wrong verification code'
+    return verification_code_error
