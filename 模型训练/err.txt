@@ -1,0 +1,82 @@
+[INFO|configuration_utils.py:710] 2023-11-06 21:48:45,168 >> loading configuration file /media/hnu/hnu2023/huangzhan/model/basemodel/chinese-alpaca-2-13b/complete_model/config.json
+[INFO|configuration_utils.py:768] 2023-11-06 21:48:45,170 >> Model config LlamaConfig {
+  "_name_or_path": "/media/hnu/hnu2023/huangzhan/model/basemodel/chinese-alpaca-2-13b/complete_model",
+  "architectures": [
+    "LlamaForCausalLM"
+  ],
+  "bos_token_id": 1,
+  "eos_token_id": 2,
+  "hidden_act": "silu",
+  "hidden_size": 5120,
+  "initializer_range": 0.02,
+  "intermediate_size": 13824,
+  "max_position_embeddings": 4096,
+  "model_type": "llama",
+  "num_attention_heads": 40,
+  "num_hidden_layers": 40,
+  "num_key_value_heads": 40,
+  "pad_token_id": 0,
+  "pretraining_tp": 1,
+  "rms_norm_eps": 1e-05,
+  "rope_scaling": null,
+  "tie_word_embeddings": false,
+  "torch_dtype": "float16",
+  "transformers_version": "4.31.0",
+  "use_cache": true,
+  "vocab_size": 55296
+}
+
+[INFO|tokenization_utils_base.py:1837] 2023-11-06 21:48:45,170 >> loading file tokenizer.model
+[INFO|tokenization_utils_base.py:1837] 2023-11-06 21:48:45,170 >> loading file added_tokens.json
+[INFO|tokenization_utils_base.py:1837] 2023-11-06 21:48:45,170 >> loading file special_tokens_map.json
+[INFO|tokenization_utils_base.py:1837] 2023-11-06 21:48:45,170 >> loading file tokenizer_config.json
+[WARNING|logging.py:295] 2023-11-06 21:48:45,171 >> You are using the legacy behaviour of the <class 'transformers.models.llama.tokenization_llama.LlamaTokenizer'>. This means that tokens that come after special tokens will not be properly handled. We recommend you to read the related pull request available at https://github.com/huggingface/transformers/pull/24565
+Traceback (most recent call last):
+  File "/media/hnu/hnu2023/huangzhan/model/Chinese-LLaMA-Alpaca-2/scripts/training/run_clm_sft_with_peft.py", line 529, in <module>
+    main()
+  File "/media/hnu/hnu2023/huangzhan/model/Chinese-LLaMA-Alpaca-2/scripts/training/run_clm_sft_with_peft.py", line 351, in main
+    with training_args.main_process_first(desc="loading and tokenization"):
+  File "/media/hnu/hnu2023/huangzhan/.conda/envs/LLaMa/lib/python3.11/contextlib.py", line 144, in __exit__
+    next(self.gen)
+  File "/media/hnu/hnu2023/huangzhan/.conda/envs/LLaMa/lib/python3.11/site-packages/transformers/training_args.py", line 1987, in main_process_first
+    dist.barrier()
+  File "/media/hnu/hnu2023/huangzhan/.conda/envs/LLaMa/lib/python3.11/site-packages/torch/distributed/distributed_c10d.py", line 3328, in barrier
+    work = default_pg.barrier(opts=opts)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+torch.distributed.DistBackendError: NCCL error in: /opt/conda/conda-bld/pytorch_1682343970094/work/torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp:1275, internal error, NCCL version 2.14.3
+ncclInternalError: Internal check failed.
+Last error:
+Proxy Call to rank 0 failed (Connect)
+ERROR:torch.distributed.elastic.multiprocessing.api:failed (exitcode: 1) local_rank: 0 (pid: 233325) of binary: /media/hnu/hnu2023/huangzhan/.conda/envs/LLaMa/bin/python
+Traceback (most recent call last):
+  File "/media/hnu/hnu2023/huangzhan/.conda/envs/LLaMa/bin/torchrun", line 33, in <module>
+    sys.exit(load_entry_point('torch==2.0.1', 'console_scripts', 'torchrun')())
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/media/hnu/hnu2023/huangzhan/.conda/envs/LLaMa/lib/python3.11/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 346, in wrapper
+    return f(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^
+  File "/media/hnu/hnu2023/huangzhan/.conda/envs/LLaMa/lib/python3.11/site-packages/torch/distributed/run.py", line 794, in main
+    run(args)
+  File "/media/hnu/hnu2023/huangzhan/.conda/envs/LLaMa/lib/python3.11/site-packages/torch/distributed/run.py", line 785, in run
+    elastic_launch(
+  File "/media/hnu/hnu2023/huangzhan/.conda/envs/LLaMa/lib/python3.11/site-packages/torch/distributed/launcher/api.py", line 134, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/media/hnu/hnu2023/huangzhan/.conda/envs/LLaMa/lib/python3.11/site-packages/torch/distributed/launcher/api.py", line 250, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+run_clm_sft_with_peft.py FAILED
+------------------------------------------------------------
+Failures:
+  <NO_OTHER_FAILURES>
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2023-11-06_21:48:55
+  host      : s2
+  rank      : 0 (local_rank: 0)
+  exitcode  : 1 (pid: 233325)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================
