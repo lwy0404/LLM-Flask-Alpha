@@ -1,4 +1,6 @@
 import os
+
+
 import pymysql
 import memcache
 from flask import Flask
@@ -7,8 +9,13 @@ from flask_login import current_user, LoginManager
 from flask_mail import Mail
 from flask_sqlalchemy import SQLAlchemy
 from flask_session import Session
-from flask_wtf.csrf import CSRFProtect
+
 from sqlalchemy.orm import DeclarativeBase
+from apscheduler.schedulers.background import BackgroundScheduler
+from celery import Celery
+
+
+
 
 
 class Base(DeclarativeBase):
@@ -46,15 +53,40 @@ app.config['SESSION_PERMANENT'] = False
 app.config['SESSION_USE_SIGNER'] = True
 Session(app)
 
+app.config['CELERY_BROKER_URL'] = 'redis://localhost:6379/0'
+app.config['CELERY_RESULT_BACKEND'] = 'redis://localhost:6379/0'
+celery = Celery(app.name, broker=app.config['CELERY_BROKER_URL'])
+celery.conf.update(app.config)
 
 # app.config['WTF_CSRF_ENABLED'] = False
+'''scheduler = BackgroundScheduler()
+scheduler.add_job(func=check_reminders, trigger="interval", minutes=1)
+scheduler.start()'''
+
+
+'''def check_reminders():
+    current_time = datetime.now()
+    reminders = Reminder.query.filter(Reminder.reminder_time <= current_time).all()
+
+    for reminder in reminders:
+        send_result = send_reminder.apply_async(args=[reminder.schedule_id])
+        if send_result.successful():
+            # Delete the reminder from the database
+            db.session.delete(reminder)
+            db.session.commit()'''
+
+
+'''@celery.task
+def send_reminder(schedule_id):
+    # Implement your reminder sending logic here
+    print(f"Sending reminder for Schedule ID: {schedule_id}")'''
 
 
 @login_manager.user_loader
 def load_user(user_email):  # 创建用户加载回调函数，接受用户 ID 作为参数
     from watchlist.models import User
 
-    user = User.query.get(email=user_email)  # 用 ID 作为 User 模型的主键查询对应的用户
+    user = User.query.filter_by(email=user_email).first()  # 用 ID 作为 User 模型的主键查询对应的用户
     return user  # 返回用户对象
 
 

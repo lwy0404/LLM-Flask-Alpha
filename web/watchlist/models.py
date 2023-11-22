@@ -3,6 +3,7 @@ from datetime import datetime
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
 from sqlalchemy import String, ForeignKey, event, and_
+from sqlalchemy.exc import NoResultFound
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, validates
 from werkzeug.security import generate_password_hash, check_password_hash
 import binascii
@@ -46,6 +47,17 @@ class TimeType(Enum):
     Minute = 1
 
 
+class Reminder(db.Model):
+    id = db.Column(db.Integer, autoincrement=True, primary_key=True)
+    reminder_time = db.Column(db.DateTime, nullable=False)
+    schedule_id = db.Column(db.BigInteger, db.ForeignKey('schedule.schedule_id'),
+                            nullable=False)
+
+    def __init__(self, reminder_time, schedule_id):
+        self.reminder_time = reminder_time
+        self.schedule_id = schedule_id
+
+
 class User(db.Model, UserMixin):
     user_id = mapped_column(db.Integer, autoincrement=True, primary_key=True)
     email = mapped_column(db.String(30), unique=True)
@@ -74,12 +86,21 @@ class User(db.Model, UserMixin):
 class Notify(db.Model):
     notify_id = mapped_column(db.Integer, primary_key=True, autoincrement=True)
     if_repeat = mapped_column(db.Boolean, nullable=False)
-    default_notify = mapped_column(db.Boolean)
-    repeat_interval = mapped_column(db.Integer)
+    default_notify = mapped_column(db.Boolean, server_default="False")
+    repeat_interval = mapped_column(db.Integer)  # 用秒表示的提醒间隔, 比如间隔5分钟提醒就是300
     before_time = mapped_column(db.Integer)  # 用秒表示的提前量, 比如提前15分钟提醒就是900
+    notify_sync = mapped_column(db.Boolean, nullable=False)  # app是否获得了notify的最新状态
 
     user_id = db.Column(db.Integer, db.ForeignKey('user.user_id'), nullable=False)
-    schedule = db.relationship('Schedule', backref='notice', lazy=True)
+    schedule = db.relationship('Schedule', backref='notice', lazy=True, cascade="save-update")
+
+    def __init__(self, if_repeat, default, interval, before, user_id, notify_sync):
+        self.if_repeat = if_repeat
+        self.default_notify = default
+        self.before_time = before
+        self.repeat_interval = interval
+        self.user_id = user_id
+        self.notify_sync = notify_sync
 
     @validates('default_notify')
     def validate_default_notify(self, key, value):
@@ -107,7 +128,7 @@ def validate_default_notify_on_insert_or_update(mapper, connection, target):
 
 
 class InputData(db.Model):
-    input_id = mapped_column(db.Integer, primary_key=True, autoincrement=True, server_default="0")
+    input_id = mapped_column(db.Integer, primary_key=True, autoincrement=True)
     input_type = mapped_column(db.Enum(InputType), nullable=False)  # 存储原始数据的类型
     data = mapped_column(db.Text, nullable=False)  # 存储的原始数据, 经过base64编码
     original_text = mapped_column(db.Text, nullable=False)  # 从原始数据中识别出来的文本
@@ -135,6 +156,8 @@ class PretrainedData(db.Model):
 
     input_id = db.Column(db.Integer, db.ForeignKey('input_data.input_id'), nullable=False)
 
+# sync总原则: 1. 如果一个schedule和它使用的notify都被APP同步(schedule_sync and notify_sync), 那么这个日程一定不会被加入邮件提醒队列(Reminder)
+#            2. 即使不满足上述条件, 也只有当启用日程本身(ScheduleState.ENABLED)且需要提醒(schedule.if_remind_message=True)的情况下会被加入队列
 
 class Schedule(db.Model):
     schedule_id: Mapped[int] = mapped_column(db.BigInteger, primary_key=True, autoincrement=True)
@@ -145,18 +168,21 @@ class Schedule(db.Model):
     start_time: Mapped[datetime] = mapped_column(db.DateTime, nullable=False)  # 日程开始时间
     end_time: Mapped[datetime] = mapped_column(db.DateTime, nullable=False)  # 日程结束时间
     if_remind_message: Mapped[bool] = mapped_column(db.Boolean, nullable=False)  # 是否启用提醒
+    schedule_sync = mapped_column(db.Boolean, nullable=False)
     schedule_type = mapped_column(db.Enum(ScheduleType), nullable=False)  # 指示日程的周期: 每年/月/日/星期/单次, 或特殊时间
 
     user_id = db.Column(db.Integer, db.ForeignKey('user.user_id'), nullable=False)
     share_schedule = db.relationship('Share', backref='schedule', lazy=True,
                                      cascade="save-update, delete-orphan, delete")
+    mail_time = db.relationship('Reminder', backref='schedule', lazy=True,
+                                cascade="save-update, delete-orphan, delete")
     date = db.relationship('ScheduleDate', backref='schedule', lazy=True,
                            cascade="save-update, delete-orphan, delete")
-    notify_id = db.Column(db.Integer, db.ForeignKey('notify.notify_id'), nullable=False)
+    notify_id = db.Column(db.Integer, db.ForeignKey('notify.notify_id'), nullable=True)
     original_data_id = db.Column(db.Integer, db.ForeignKey('input_data.input_id'), nullable=False)
 
     def __init__(self, schedule_status, schedule_brief, schedule_detail, time_type, start_time, end_time,
-                 schedule_type, if_remind, user_id, notify_id, input_id):
+                 schedule_type, if_remind, user_id, notify_id, input_id, schedule_sync):
         self.schedule_status = schedule_status
         self.time_type = time_type
         self.schedule_type = schedule_type
@@ -168,6 +194,18 @@ class Schedule(db.Model):
         self.if_remind_message = if_remind
         self.notify_id = notify_id
         self.original_data_id = input_id
+        self.schedule_sync = schedule_sync
+
+
+@event.listens_for(Schedule, 'before_insert')
+@event.listens_for(Schedule, 'before_update')
+def before_schedule_insert_update_listener(mapper, connection, schedule):
+    # 在插入和更新之前检查 if_remind_message 和 notify_id 的约束
+    if schedule.if_remind_message and not schedule.notify_id:
+        raise ValueError("if_remind_message为True时，notify_id不能为空")
+
+    if schedule.notify_id is None and schedule.if_remind_message:
+        raise ValueError("notify_id为空时，if_remind_message只能为False")
 
 
 class Share(db.Model):

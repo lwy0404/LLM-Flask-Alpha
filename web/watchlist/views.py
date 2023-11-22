@@ -1,14 +1,16 @@
+import calendar
 from datetime import datetime, timedelta
 import random
 from smtplib import SMTPException
 
 import requests
+from apscheduler.schedulers.background import BackgroundScheduler
 from flask_mail import Message
 from flask_wtf.csrf import generate_csrf
 from sqlalchemy.exc import SQLAlchemyError
 from validate_email import validate_email
-from watchlist import app, db, Alpaca_API_URL, mail, Session, memcache_client
-from watchlist.models import User, Schedule, Share
+from watchlist import app, db, Alpaca_API_URL, mail, Session, memcache_client, celery
+from watchlist.models import User, Schedule, Share, ScheduleState, Reminder
 from flask_login import login_user, login_required, logout_user, current_user
 from flask import render_template, request, url_for, redirect, flash, session, jsonify
 from wtforms import StringField, SubmitField, PasswordField
@@ -65,6 +67,52 @@ class RegisterForm(FlaskForm):
     submit = SubmitField("注册")
 
 
+def check_reminders():
+    current_time = datetime.now()
+    reminders = Reminder.query.filter(Reminder.reminder_time <= current_time).all()
+
+    for reminder in reminders:
+        send_result = send_reminder.apply_async(args=[reminder.schedule_id])
+        if send_result.successful():
+            # Delete the reminder from the database
+            db.session.delete(reminder)
+            db.session.commit()
+
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(func=check_reminders, trigger="interval", minutes=1)
+scheduler.start()
+
+
+def send_reminder_email(user, schedule):
+    # 构造邮件消息
+    subject = f'提醒：{schedule.schedule_brief}日程即将开始'
+    body = f'亲爱的 {user.username}，您的日程即将在 {schedule.start_time} 开始。请注意安排您的时间。'
+    recipients = [user.email]
+
+    # 创建邮件对象
+    message = Message(subject=subject, body=body, recipients=recipients)
+
+    # 发送邮件
+    try:
+        mail.send(message)
+        return True
+    except Exception as e:
+        # 发送失败时的处理
+        print(f"Error sending email: {str(e)}")
+        return False
+
+
+@celery.task
+def send_reminder(schedule_id):
+    schedule = Schedule.query.filter_by(schedule_id=schedule_id).first()
+    user = schedule.user.first()
+    result = send_reminder_email(user, schedule)
+    if result:
+        return True
+    return False
+
+
 @app.route("/", methods=["GET"])
 def beginpage():
     return render_template("beginpage.html")
@@ -97,10 +145,11 @@ def login():
     return render_template("login.html")
 
 
-@app.route("/login_with_CAPTCHA", methods=["GET", "POST"])
-def login_with_CAPTCHA():
-    form = LoginFormCAPTCHA()
+@app.route("/login_verification", methods=["GET", "POST"])
+def login_verification():
     if request.method == "POST":
+        data = request.form
+        form = LoginFormCAPTCHA(data=data)
         if form.validate():
             user_email = form.email.data
             verification_code = form.verification_code.data
@@ -122,41 +171,45 @@ def login_with_CAPTCHA():
         for field, messages in form.errors.items():
             errors[field] = messages[0]  # 使用第一个错误消息
         return jsonify(errors), 400
+    return render_template("login_verification.html")
 
 
 @app.route("/send_verification_code", methods=["POST"])
 def send_verification_code():
     data = request.form
     email = data.get('email')
-
+    message = {}
     # 验证邮箱是否有效
     if not validate_email(email):
         return jsonify({'success': False, 'message': "请输入有效的邮箱地址，比如：email@domain.com"}), 400
-    basic_send_verification_code(email)
+    basic_send_verification_code(email=email, message=message)
+    return message
 
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
-    form = RegisterForm()
     if request.method == "POST":
+        data = request.form
+        form = RegisterForm(data=data)
         if form.validate():
             user_email = form.email.data
             password = form.password.data
             verification_code = form.verification_code.data
             cached_verification_code = memcache_client.get(user_email)
             verification_code_error = dict()
+            registration_message = dict()
 
             check_verification_code(verification_code_error, cached_verification_code, verification_code)
             if verification_code_error:
                 return jsonify(verification_code_error), 200
 
-            basic_register(user_email, cached_verification_code, verification_code, password)
+            basic_register(user_email=user_email, password=password, registration_message=registration_message)
         errors = dict()
         for field, messages in form.errors.items():
             errors[field] = messages[0]  # 使用第一个错误消息，可以根据需要修改此处
         return jsonify(errors), 400
 
-    return render_template("register.html", form=form)
+    return render_template("register.html")
 
 
 @app.route("/logout", methods=["GET"])
@@ -241,7 +294,8 @@ def basic_register(user_email, password, registration_message):
 def basic_login(user_email, password, login_message):
     user = User.query.filter_by(email=user_email).first()
     if user is not None and user.validate_password(password):
-        login_user(user)  # 登入用户
+        if not user.is_authenticated:
+            login_user(user)  # 登入用户
         login_message['success'] = True
         login_message['message'] = "Login success."
 
@@ -368,3 +422,106 @@ def create_schedule(schedule_attributes):
         'schedule_type': schedule_attributes['time_type']
     }
     return schedule
+
+
+def generate_remind_times(schedule):     # 将所有提醒时间批量加入Reminder中
+    occurrences = calculate_schedule_occurrences(schedule=schedule)
+    reminder_times = calculate_reminder(occurrence=occurrences, schedule=schedule)
+    try:
+        for remind in reminder_times:
+            db.session.add(remind)
+        db.session.commit()
+        return True
+
+    except SQLAlchemyError as e:
+        # 如果发生异常，回滚数据库并记录错误
+        db.session.rollback()
+        print(f"Error adding reminders to the database: {str(e)}")
+        return False
+
+
+def calculate_reminder(occurrence, schedule: Schedule):
+    notify = schedule.notice.first()
+    reminder_times = []
+    if schedule.if_remind_message and schedule.schedule_status == ScheduleState.ENABLED:
+        # 遍历每个发生时间
+        for event_time in occurrence:
+            # 计算提前多少时间发送提醒
+            reminder_time = event_time - timedelta(seconds=notify.before_time)
+
+            # 添加第一次提醒时间
+            reminder_times.append((reminder_time, schedule.schedule_id))
+
+    return reminder_times
+
+
+def calculate_schedule_occurrences(schedule):
+    occurrences = []
+
+    # 设置起始时间为日程开始时间
+    current_time = schedule.start_time
+    if schedule.if_remind_message and schedule.schedule_status == ScheduleState.ENABLED:
+        occurrences.append(current_time)
+        while current_time.year <= 2071:
+            next_occurrence = calculate_next_occurrence_based_on_type(schedule, current_time)  # 计算下一次发生的时间
+            occurrences.append(next_occurrence)  # 添加到结果列表
+            current_time = next_occurrence  # 更新当前时间为下一次发生的时间
+    filtered_occurrences = [dt for dt in occurrences if dt >= datetime.now()]
+    return filtered_occurrences
+
+
+def calculate_next_occurrence_based_on_type(schedule, current_time):
+    # 映射不同的日程类型到相应的计算方法
+    type_mapping = {
+        'SINGLE': calculate_single_occurrence,
+        'CYCLE': calculate_cycle_occurrence,
+        'EVERY_DAY': calculate_every_day_occurrence,
+        'EVERY_WEEK': calculate_every_week_occurrence,
+        'EVERY_MONTH': calculate_every_month_occurrence,
+        'EVERY_YEAR': calculate_every_year_occurrence,
+    }
+
+    # 获取对应日程类型的计算方法，默认为 None
+    calculate_method = type_mapping.get(schedule.schedule_type, None)
+
+    # 调用计算方法并返回结果
+    if calculate_method:
+        return calculate_method(schedule, current_time)
+    else:
+        return None
+
+
+def calculate_single_occurrence(schedule, current_time):
+    # 如果是单次日程，则返回空
+    return None
+
+
+def calculate_cycle_occurrence(schedule, current_time):
+    next_time = current_time + timedelta(seconds=schedule.date)
+    return current_time + next_time
+
+
+def calculate_every_day_occurrence(schedule, current_time):
+    # 如果是每天发生，则根据date_num计算下一次发生的时间
+    return current_time + timedelta(days=schedule.date)
+
+
+def calculate_every_week_occurrence(schedule, current_time):
+    # 如果是每周发生，则根据date_num计算下一次发生的时间
+    return current_time + timedelta(weeks=schedule.date)
+
+
+def calculate_every_month_occurrence(schedule, current_time):
+    # 如果是每月发生，则根据date_num计算下一次发生的时间
+    next_occurrence_month = current_time.month + schedule.date
+    next_occurrence_year = current_time.year + (next_occurrence_month - 1) // 12
+    next_occurrence_month = (next_occurrence_month - 1) % 12 + 1
+    next_occurrence_day = min(current_time.day, calendar.monthrange(next_occurrence_year, next_occurrence_month)[1])
+    next_occurrence = datetime(next_occurrence_year, next_occurrence_month, next_occurrence_day,
+                               current_time.hour, current_time.minute, current_time.second)
+    return next_occurrence
+
+
+def calculate_every_year_occurrence(schedule, current_time):
+    # 如果是每年发生，则根据date_num计算下一次发生的时间
+    return current_time.replace(year=current_time.year + schedule.date)

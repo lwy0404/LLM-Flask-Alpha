@@ -10,7 +10,7 @@
     padding: 0;
     width: 100%;
     height: 100%;
-    background-image: url('static/images/loginbg.png');; /* 更新图片路径 */
+    background-image: url('../static/images/loginbg.png'); /* 更新图片路径 */
     background-size: cover;
     display: flex;
     align-items: center;
@@ -145,7 +145,7 @@ new Vue({
     },
     goToVerifyLogin() {
       const params = this.email ? `?username=${encodeURIComponent(this.email)}` : '';
-      window.location.href = `loginv.html${params}`;
+      window.location.href = `login_verification.html${params}`;
     },
     async getCSRFToken() {
       try {
