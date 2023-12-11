@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>注册</title>
+<style>
+  body, html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url('../static/images/signupbg.png'); /* 更新图片路径 */
+    background-size: cover;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .login-box {
+    width: 50%;
+    padding: 20px;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .form-item {
+    display: flex;
+    width: 100%;
+    justify-content: center;
+    margin-bottom: 15px;
+  }
+  .form-item3 {
+    display: flex;
+    width: 100%;
+    justify-content: center;
+    margin-bottom: 15px;
+  }
+  .form-item input {
+    width: 90%;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+  }
+  .form-item input.invalid-borderx {
+    width: 90%;
+    padding: 10px;
+    border: 3px solid red;
+    border-radius: 4px;
+    box-sizing: border-box;
+  }
+  .border {
+    width: 90%;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+  }
+  .form-item2 {
+    display: flex;
+    width: 100%;
+    justify-content: center;
+    margin-bottom: 15px;
+  }
+  .form-item2 input {
+    width: 80%;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+  }
+  .invalid-border, .invalid-border:focus{
+    width: 90%;
+    padding: 10px;
+    border: 3px solid red;
+    border-radius: 4px;
+    box-sizing: border-box;
+  }
+  .login-btn {
+    width: 90%;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    background-color: #007bff;
+    color: white;
+    cursor: pointer;
+  }
+  .form-item2 code-btn {
+    width: 10%;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    background-color: #007bff;
+    color: white;
+    cursor: pointer;
+  }
+  .login-text {
+    text-align: center;
+    margin-top: 15px;
+    color: #666;
+  }
+  .login-link {
+    color: #007bff;
+    text-decoration: none;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<div class="login-box" id="app">
+  <h2>注册</h2>
+  <div class="form-item">
+    <input type="text" id="email" placeholder="请输入有效的邮箱地址,必填" v-model="email" @input="emailValidation" v-bind:class="{ 'invalid-borderx': invalidemail }" >
+  </div>
+  <div class="form-item">
+    <input type="text" id="username" placeholder="请输入设置的用户名,必填" v-model="username">
+  </div>
+  <div class="form-item">
+    <input type="password" id="password" placeholder="请设置密码,必填" v-model="password" @input="testrepeat">
+  </div>
+  <div class="form-item3">
+    <input type="password" id="password_repeat" placeholder="请重复密码,请确保和密码一致" v-model="password_repeat" class="border" v-bind:class="{ 'invalid-border': invalidrepeat }" @input="testrepeat">
+  </div>
+  <div class="form-item2">
+    <input type="text" id="verificationcode" placeholder="请输入验证码" v-model="verificationcode" @keypress="onlyNumber($event)">
+    <button class="code-btn" @click="sendCode" :disabled="!emailvalid">发送验证码</button>
+  </div>
+  <button class="login-btn" @click="register" :disabled="!verify">注册</button>
+  <p class="login-text">
+    已有帐户？<span class="login-link" @click="goToLogin">转到登录</span>
+  </p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script>
+new Vue({
+  el: '#app',
+  data: {
+    username: '',
+    email: '',
+    password: '',
+    password_repeat: '',
+    verify: false,
+    verificationcode: '',
+    emailvalid: false,
+    countdown: 0,
+    iscount: false,
+    countdownTimer: null,
+    csrf_token: null,
+    invalidrepeat: false,
+    invalidemail: false,
+  },
+  created() {
+    const urlParams = new URLSearchParams(window.location.search);
+    this.email = urlParams.get('username') || '';
+    this.password = urlParams.get('password') || '';
+    this.verify = false;
+    this.getCSRFToken();
+  },
+  methods: {
+    onlyNumber($event) {
+      let keyCode = ($event.keyCode ? $event.keyCode : $event.which);
+      if (keyCode < 48 || keyCode > 57) {
+        $event.preventDefault();
+      }
+    },
+    async register() {
+      if (!this.verify) {
+        alert('您还尚未发送验证码！');
+      } else {
+        if (this.password!=this.password_repeat) {
+          alert('两次密码不一致！');
+        } else {
+          try {
+            const response = await axios({
+              method: 'post',
+              url: '/signup',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': this.csrf_token,
+              },
+              data: {
+                email: this.email,
+                password: this.password,
+                verification_code: this.verificationcode,
+                csrf_token: this.csrf_token,
+              },
+            });
+            if(response.data.success) {
+              alert('注册成功！即将自动跳转到登录');
+              const params = new URLSearchParams({ username: this.email, password: this.password });
+              window.location.href = `login?${params.toString()}`;
+            } else {
+              alert('注册失败，请重试。');
+              const dataString = JSON.stringify(response.data, null, 2);
+              if (dataString!='""' && dataString!='') alert(dataString);
+            }
+          } catch (error) {
+            const status=error.response?error.response.status:'';
+            const data=error.response?error.response.data:'未知';
+            alert('出现意外错误'+status+'，请重试或联系管理员！');
+            const dataString = JSON.stringify(data, null, 2);
+            if (dataString!='""' && dataString!='') alert(dataString);
+          }
+        }
+      }
+    },
+    emailValidation(){
+      const re = /^[\w-]+(\.[\w-]+)*@([\w-]+\.)+[a-zA-Z]{2,7}$/;
+      this.emailvalid = re.test(this.email);
+      if (this.invalidemail && this.emailvalid) {
+        this.invalidemail=false;
+      }
+    },
+    async sendCode(){
+      if (!this.emailvalid) {
+        this.invalidemail=true;
+        alert('邮箱不合法！');
+      } else {
+        if (this.countdown > 0) {
+          alert('剩余'+this.countdown+'秒后才可以重新发送！');
+        } else {
+          try {
+            const response = await axios({
+                  method: 'post',
+                  url: '/send_code',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': this.csrf_token,
+                  },
+                  data: {
+                    email: this.email,
+                    csrf_token: this.csrf_token,
+                  },
+                });
+
+            const data=response.data?response.data:{};
+
+            if(data.success){
+              this.verify=true;
+              this.countdown=120;
+              this.startCountdown();
+              alert('验证码发送成功！');
+            } else {
+              this.verify=false;
+              this.countdown=3;
+              this.startCountdown();
+              alert('验证码发送失败！请3秒后重试！');
+              const dataString = data.message;
+              if (dataString=='请输入有效的邮箱地址，比如：email@domain.com') this.invalidemail=true;
+              if (dataString!='""' && dataString!='') alert(dataString);
+            }
+          } catch (error) {
+            const status=error.response?error.response.status:'';
+            const data=error.response?error.response.data:'未知';
+            alert('出现意外错误'+status+'，请重试或联系管理员！');
+            const dataString = data.message;
+            if (dataString=='请输入有效的邮箱地址，比如：email@domain.com') this.invalidemail=true;
+            if (dataString!='""' && dataString!='') alert(dataString);
+          }
+        }
+      }
+    },
+    startCountdown() {
+      //this.updateButtonText();
+      this.countdownTimer = setInterval(() => {
+        this.countdown--;
+        //this.updateButtonText();
+
+        if(this.countdown <= 0) {
+          clearInterval(this.countdownTimer);
+          //this.sendButtonDisabled = false;
+          //this.sendButtonText = '发送';
+        }
+      }, 1000);
+    },
+    goToLogin() {
+      let keep = (this.email !== '');
+      if (keep) {
+        keep = confirm('是否保留数据？');
+      }
+      if (keep) {
+        // 将数据传递到signup.html页面的逻辑（可能需要根据实际情况调整）
+        const params = new URLSearchParams({ username: this.email, password: this.password });
+        window.location.href = `login?${params.toString()}`;
+      } else {
+        window.location.href = 'login';
+      }
+    },
+    async getCSRFToken() {
+      try {
+        // GET request to backend to get csrf_token
+        const response = await axios.get('/csrf_token');
+        this.csrf_token = response.data.csrf_token;
+      } catch (error) {
+        alert('出现网络错误，请尝试刷新页面！');
+      }
+    },
+    testrepeat() {
+      this.invalidrepeat=false;
+      if (this.password!=this.password_repeat) {
+        this.invalidrepeat=true;
+      }
+    },
+    testrpt() {
+      if (this.invalidrepeat && this.password==this.password_repeat) {
+        this.invalidrepeat=false;
+      }
+    }
+  }
+});
+</script>
+</body>
+</html>

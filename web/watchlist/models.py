@@ -1,3 +1,4 @@
+import secrets
 from datetime import datetime
 
 from flask_sqlalchemy import SQLAlchemy
@@ -35,6 +36,10 @@ class ScheduleType(Enum):
     AT_SPECIFIC_MONTHDAY = 7
     AT_SPECIFIC_DATE_WITHOUT_SPECIFIC_YEAR = 8
     AT_SPECIFIC_TIME = 9
+
+
+'''/sT=0 null sT=1 datetime cycle timelength sT=2345 int (eg. sT=2 cT=2 means every 2 week) sT= int (eg. sT=6 cT=3 
+means every Thursday/sT=7 cT=7 means every 8th day of month(7+1=8)) sT=8 int (eg. cT=105 means every February 6)'''
 
 
 class LanguageModel(Enum):
@@ -79,28 +84,31 @@ class User(db.Model, UserMixin):
     def get_id(self):
         return str(self.user_id)
 
-    def __init__(self, email):
+    def __init__(self, email, name):
         self.email = email
+        self.user_name = name
 
 
 class Notify(db.Model):
     notify_id = mapped_column(db.Integer, primary_key=True, autoincrement=True)
+    notify_name = mapped_column(db.String(40), nullable=False)
     if_repeat = mapped_column(db.Boolean, nullable=False)
-    default_notify = mapped_column(db.Boolean, server_default="False")
-    repeat_interval = mapped_column(db.Integer)  # 用秒表示的提醒间隔, 比如间隔5分钟提醒就是300
-    before_time = mapped_column(db.Integer)  # 用秒表示的提前量, 比如提前15分钟提醒就是900
+    default_notify = mapped_column(db.Boolean, server_default="0")
+    repeat_interval = mapped_column(db.Integer, nullable=True)  # 用秒表示的提醒间隔, 比如间隔5分钟提醒就是300
+    before_time = mapped_column(db.Integer, nullable=False)  # 用秒表示的提前量, 比如提前15分钟提醒就是900
     notify_sync = mapped_column(db.Boolean, nullable=False)  # app是否获得了notify的最新状态
 
     user_id = db.Column(db.Integer, db.ForeignKey('user.user_id'), nullable=False)
     schedule = db.relationship('Schedule', backref='notice', lazy=True, cascade="save-update")
 
-    def __init__(self, if_repeat, default, interval, before, user_id, notify_sync):
+    def __init__(self, if_repeat, default, interval, before, user_id, notify_sync, notify_name):
         self.if_repeat = if_repeat
         self.default_notify = default
         self.before_time = before
         self.repeat_interval = interval
         self.user_id = user_id
         self.notify_sync = notify_sync
+        self.notify_name = notify_name
 
     @validates('default_notify')
     def validate_default_notify(self, key, value):
@@ -137,24 +145,34 @@ class InputData(db.Model):
     pretrainable = mapped_column(db.Boolean, nullable=False)  # 这份input是否能被添加到训练集
 
     schedule = db.relationship('Schedule', backref='schedule', lazy=True, cascade="save-update")
-    pretrained_data = db.relationship('PretrainedData', backref='input_data', lazy=True, uselist=False)
 
-    def __init__(self, input_type, data, original_text, now_time, use_model):
+    def __init__(self, input_type, data, original_text, now_time, use_model, pretrainable):
         self.input_type = input_type
         self.data = data
         self.original_text = original_text
         self.apply_time = now_time
         self.use_model = use_model
+        self.pretrainable = pretrainable
 
 
 class PretrainedData(db.Model):
     pretrained_id = mapped_column(db.Integer, primary_key=True, autoincrement=True)
     input_type = mapped_column(db.Enum(InputType), nullable=False)  # 存储原始数据的类型
     data = mapped_column(db.Text, nullable=False)  # 存储的原始数据, 经过base64编码
+    original_text = mapped_column(db.Text, nullable=False)  # 从原始数据中识别出来的文本
     apply_time: Mapped[datetime] = mapped_column(db.DateTime, nullable=False)  # 提交时间
     use_model = mapped_column(db.Enum(LanguageModel), nullable=False)  # 由哪个语言模型进行分析
 
-    input_id = db.Column(db.Integer, db.ForeignKey('input_data.input_id'), nullable=False)
+    schedule_id = db.Column(db.BigInteger, db.ForeignKey('schedule.schedule_id'), nullable=True)
+
+    def __init__(self, input_type, data, original_text, now_time, use_model, schedule_id):
+        self.input_type = input_type
+        self.data = data
+        self.original_text = original_text
+        self.apply_time = now_time
+        self.use_model = use_model
+        self.schedule_id = schedule_id
+
 
 # sync总原则: 1. 如果一个schedule和它使用的notify都被APP同步(schedule_sync and notify_sync), 那么这个日程一定不会被加入邮件提醒队列(Reminder)
 #            2. 即使不满足上述条件, 也只有当启用日程本身(ScheduleState.ENABLED)且需要提醒(schedule.if_remind_message=True)的情况下会被加入队列
@@ -171,21 +189,23 @@ class Schedule(db.Model):
     schedule_sync = mapped_column(db.Boolean, nullable=False)
     schedule_type = mapped_column(db.Enum(ScheduleType), nullable=False)  # 指示日程的周期: 每年/月/日/星期/单次, 或特殊时间
 
-    user_id = db.Column(db.Integer, db.ForeignKey('user.user_id'), nullable=False)
     share_schedule = db.relationship('Share', backref='schedule', lazy=True,
                                      cascade="save-update, delete-orphan, delete")
     mail_time = db.relationship('Reminder', backref='schedule', lazy=True,
                                 cascade="save-update, delete-orphan, delete")
     date = db.relationship('ScheduleDate', backref='schedule', lazy=True,
                            cascade="save-update, delete-orphan, delete")
+    training_data = db.relationship('PretrainedData', backref='schedule', lazy=True, uselist=False)
+
     notify_id = db.Column(db.Integer, db.ForeignKey('notify.notify_id'), nullable=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.user_id'), nullable=False)
     original_data_id = db.Column(db.Integer, db.ForeignKey('input_data.input_id'), nullable=False)
 
     def __init__(self, schedule_status, schedule_brief, schedule_detail, time_type, start_time, end_time,
-                 schedule_type, if_remind, user_id, notify_id, input_id, schedule_sync):
-        self.schedule_status = schedule_status
-        self.time_type = time_type
-        self.schedule_type = schedule_type
+                 schedule_type, if_remind, user_id, notify_id, original_data_id, schedule_sync):
+        self.schedule_status = ScheduleState(schedule_status)
+        self.time_type = TimeType(time_type)
+        self.schedule_type = ScheduleType(schedule_type)
         self.schedule_brief = schedule_brief
         self.schedule_detail = schedule_detail
         self.start_time = start_time
@@ -193,7 +213,7 @@ class Schedule(db.Model):
         self.user_id = user_id
         self.if_remind_message = if_remind
         self.notify_id = notify_id
-        self.original_data_id = input_id
+        self.original_data_id = original_data_id
         self.schedule_sync = schedule_sync
 
 
@@ -209,21 +229,24 @@ def before_schedule_insert_update_listener(mapper, connection, schedule):
 
 
 class Share(db.Model):
-    share_code = mapped_column(db.String(6), nullable=False, unique=True)  # 使用较短的字符串字段
+    share_code = mapped_column(db.String(8), nullable=False, unique=True)  # 使用较短的字符串字段
     share_id = mapped_column(db.Integer, primary_key=True, autoincrement=True)
     share_cascade = mapped_column(db.Boolean, nullable=False)  # 指示由该分享添加的日程是否复制对应的input_data
     expiration_date = mapped_column(db.DateTime, nullable=False)
     schedule_id = db.Column(db.BigInteger, db.ForeignKey('schedule.schedule_id'),
                             nullable=False)
 
-    def __init__(self, schedule_id, expiration_date):
+    def __init__(self, schedule_id, expiration_date, share_cascade):
         self.share_code = self.calculate_share_code()
         self.schedule_id = schedule_id
         self.expiration_date = expiration_date
+        self.share_cascade = share_cascade
 
     def calculate_share_code(self):
         # 将 share_id 转换为字节
         share_schedule_id_bytes = str(self.share_id).encode()
+        random_bytes = secrets.token_bytes(4)  # 4 字节的随机数
+        share_schedule_id_bytes += random_bytes
         # 使用 CRC32 哈希算法计算哈希值
         crc32_hash = zlib.crc32(share_schedule_id_bytes) & 0xFFFFFFFF
         # 将哈希值格式化为 8 位的十六进制字符串

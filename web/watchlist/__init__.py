@@ -1,6 +1,6 @@
 import os
 
-
+import apscheduler
 import pymysql
 import memcache
 from flask import Flask
@@ -9,13 +9,11 @@ from flask_login import current_user, LoginManager
 from flask_mail import Mail
 from flask_sqlalchemy import SQLAlchemy
 from flask_session import Session
+from flask_apscheduler import APScheduler
 
 from sqlalchemy.orm import DeclarativeBase
-from apscheduler.schedulers.background import BackgroundScheduler
+
 from celery import Celery
-
-
-
 
 
 class Base(DeclarativeBase):
@@ -35,6 +33,7 @@ login_manager.login_view = 'login'
 bootstrap = Bootstrap5(app)
 Alpaca_API_URL = 'http://localhost:19327/v1/chat/completions'
 GLM_API_URL = 'http://localhost:8000/v1/chat/completions'
+CHECK_PATH = "/media/hnu/hnu2023/liwanyun/model/flags"
 
 app.config["MAIL_SERVER"] = "smtp.qq.com"  # 邮件服务器的名称/IP地址
 app.config["MAIL_PORT"] = 465  # 所用服务器的端口号
@@ -53,40 +52,25 @@ app.config['SESSION_PERMANENT'] = False
 app.config['SESSION_USE_SIGNER'] = True
 Session(app)
 
-app.config['CELERY_BROKER_URL'] = 'redis://localhost:6379/0'
-app.config['CELERY_RESULT_BACKEND'] = 'redis://localhost:6379/0'
-celery = Celery(app.name, broker=app.config['CELERY_BROKER_URL'])
+
+celery = Celery(app.name,  broker='sqla+mysql+pymysql://liwanyun:graphhnu2023@115.157.197.84:8040/LLM',
+                backend= 'db+mysql+pymysql://liwanyun:graphhnu2023@115.157.197.84:8040/LLM')
 celery.conf.update(app.config)
 
+app.config['SCHEDULER_API_ENABLED'] = True
+scheduler = APScheduler()
+scheduler.init_app(app)
+scheduler.start()
+
+
 # app.config['WTF_CSRF_ENABLED'] = False
-'''scheduler = BackgroundScheduler()
-scheduler.add_job(func=check_reminders, trigger="interval", minutes=1)
-scheduler.start()'''
-
-
-'''def check_reminders():
-    current_time = datetime.now()
-    reminders = Reminder.query.filter(Reminder.reminder_time <= current_time).all()
-
-    for reminder in reminders:
-        send_result = send_reminder.apply_async(args=[reminder.schedule_id])
-        if send_result.successful():
-            # Delete the reminder from the database
-            db.session.delete(reminder)
-            db.session.commit()'''
-
-
-'''@celery.task
-def send_reminder(schedule_id):
-    # Implement your reminder sending logic here
-    print(f"Sending reminder for Schedule ID: {schedule_id}")'''
 
 
 @login_manager.user_loader
-def load_user(user_email):  # 创建用户加载回调函数，接受用户 ID 作为参数
+def load_user(user_id):  # 创建用户加载回调函数，接受用户 ID 作为参数
     from watchlist.models import User
 
-    user = User.query.filter_by(email=user_email).first()  # 用 ID 作为 User 模型的主键查询对应的用户
+    user = User.query.filter_by(user_id=int(user_id)).first()  # 用 ID 作为 User 模型的主键查询对应的用户
     return user  # 返回用户对象
 
 

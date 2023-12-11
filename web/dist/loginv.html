@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录</title>
+<style>
+  body, html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url('images/loginvbg.png'); /* 更新图片路径 */
+    background-size: cover;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .login-box {
+    width: 50%;
+    padding: 20px;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .form-item {
+    display: flex;
+    width: 100%;
+    justify-content: center;
+    margin-bottom: 15px;
+  }
+  .form-item input {
+    width: 90%;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+  }
+  .form-item2 {
+    display: flex;
+    width: 100%;
+    justify-content: center;
+    margin-bottom: 15px;
+  }
+  .form-item2 input {
+    width: 80%;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+  }
+  .login-btn {
+    width: 90%;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    background-color: #007bff;
+    color: white;
+    cursor: pointer;
+  }
+  .form-item2 code-btn {
+    width: 10%;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    background-color: #007bff;
+    color: white;
+    cursor: pointer;
+  }
+  .verify-login-btn {
+    width: 90%;
+    margin-top: 10px;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    background-color: #28a745;
+    color: white;
+    cursor: pointer;
+  }
+  .register-text {
+    text-align: center;
+    margin-top: 15px;
+    color: #666;
+  }
+  .register-link {
+    color: #007bff;
+    text-decoration: none;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<div class="login-box" id="app">
+  <h2>登录</h2>
+  <div class="form-item">
+    <input type="text" id="username" placeholder="请输入有效的邮箱地址" v-model="username" @input="emailValidation">
+  </div>
+  <div class="form-item2">
+    <input type="text" id="verificationcode" placeholder="请输入验证码" v-model="verificationcode" @keypress="onlyNumber($event)">
+    <button class="code-btn" @click="sendCode" :disabled="!emailvalid">发送验证码</button>
+  </div>
+  <button class="login-btn" @click="login" :disabled="verify">登录</button>
+  <button class="verify-login-btn" @click="goToPasswordLogin">使用密码登录→</button>
+  <p class="register-text">
+    Don't have an account? <span class="register-link" @click="goToRegister">Go to Register</span>
+  </p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script>
+new Vue({
+  el: '#app',
+  data: {
+    username: '',
+    verify: false,
+    verificationcode: '',
+    emailvalid: false,
+    countdown: 0,
+    iscount: false,
+    countdownTimer: null,
+  },
+  created() {
+    const urlParams = new URLSearchParams(window.location.search);
+    this.username = urlParams.get('username') || '';
+    this.verify=false;
+  },
+  methods: {
+    onlyNumber($event) {
+      let keyCode = ($event.keyCode ? $event.keyCode : $event.which);
+      if (keyCode < 48 || keyCode > 57) {
+        $event.preventDefault();
+      }
+    },
+    async login() {
+      if (!this.verify) {
+        alert('您还尚未发送验证码！');
+      } else {
+      // 这里的DENGLU函数应替换为实际的API调用
+        const result = await DENGLU(this.username, this.password);
+        if(result) {
+          window.location.href = 'main.html';
+        } else {
+          alert('登录失败，请检查您的用户名和验证码是否正确。');
+        }
+      }
+    },
+    emailValidation(){
+      const re = /^[\w-]+(\.[\w-]+)*@([\w-]+\.)+[a-zA-Z]{2,7}$/;
+      this.emailvalid = re.test(this.username);
+    },
+    async sendCode(){
+      if (!this.emailvalid) {
+        alert('邮箱不合法！');
+      } else {
+        if (this.countdown > 0) {
+          alert('剩余'+this.countdown+'秒后才可以重新发送！');
+        } else {
+          try {
+            const response = await axios.post("{{ url_for('send_verification_code') }}", {
+              email: this.username,
+              password: this.password,
+              repeatPassword: this.repeatPassword
+            });
+
+            const data = response.data;
+
+            if(data.success){
+              this.startCountdown();
+              this.verify=true;
+            } else {
+              this.verify=false;
+            }
+          } catch (error) {
+            if (error.response && error.response.status === 400) {
+              this.handleFormErrors(error.response);
+              alert('error 400!');
+            }
+          }
+        }
+      }
+    },
+    startCountdown() {
+      this.countdown = 60;
+      //this.updateButtonText();
+      this.countdownTimer = setInterval(() => {
+        this.countdown--;
+        //this.updateButtonText();
+
+        if(this.countdown <= 0) {
+          clearInterval(this.countdownTimer);
+          //this.sendButtonDisabled = false;
+          //this.sendButtonText = '发送';
+        }
+      }, 1000);
+    },
+    goToRegister() {
+      let keep = (this.username !== '');
+      if (keep) {
+        keep = confirm('是否保留数据？');
+      }
+      if (keep) {
+        // 将数据传递到signup.html页面的逻辑（可能需要根据实际情况调整）
+        const params = new URLSearchParams({ username: this.username, password: this.password });
+        window.location.href = `signup.html?${params.toString()}`;
+      } else {
+        window.location.href = 'signup.html';
+      }
+    },
+    goToPasswordLogin() {
+      const params = this.username ? `?username=${encodeURIComponent(this.username)}` : '';
+      window.location.href = `login.html${params}`;
+    }
+  }
+});
+</script>
+</body>
+</html>

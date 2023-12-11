@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>日程添加</title>
+<style>
+  .top-bar {
+    background-color: #000;
+    color: white;
+    padding: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .login-box {
+    //max-width: 480px;
+    margin: auto;
+  }
+
+  .date-text {
+    margin-left: 20px;
+    color: #ccc;
+    font-size: 15px;
+  }
+
+  .logout-button {
+    border: none;
+    background: none;
+    color: white;
+    cursor: pointer;
+    font-size: 25px;
+    margin-left: 10px;
+  }
+  
+  .icon {
+    width: 25px;
+    height: 25px;
+    filter: invert(100%);
+    cursor: pointer;
+    position: relative;
+    top: 3px;
+    left: 10px;
+    margin-right: 20px;
+  }
+
+  .main-content {
+    display: flex;
+    width: 100%; 
+    height: 2px;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+  }
+  
+  .content-title {
+    margin-top: 2.5%;
+    display: flex;
+    width: 100%;
+    height: 15%;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .body-text {
+    color: #222;
+    font-size: 48px;  
+  }
+  
+  .content-body {
+    width: 100%;
+    height: 85%;
+    /*border: 5px solid red;*/  
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+  }
+  
+  .content-view {
+    width: 80%;
+    height: 80%;
+    border: 5px solid black;
+    justify-content: flex-start;
+    flex-direction: column;
+    margin-top: 2.5%;
+    overflow-y: auto; /* 允许垂直滚动 */
+  }
+  
+  .single-schedule {
+    width: 90%;
+    display: flex;
+    height: 80px;
+    border: 3px solid black;
+    align-items: center;
+    justify-content: center;
+    margin-top: 1%;
+    margin-left: 5%;
+  }
+  
+  .label-desc {
+    width: 25%;
+    display: flex;
+    margin-left: 1%;
+    margin-right: 1.5%;
+    text-align: center;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .content-desc {
+    width: 25%;
+    height: 90%;
+    /*border: 5px solid red;*/
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    display: flex;
+    margin-left: 1%;
+    margin-right: 1.5%;
+  }
+  
+  .label-time {
+    widht: 90%;
+    display: flex;
+    text-align: center;
+    align-items: center;
+    justify-content: center;
+    margin-top: 3%;
+    margin-bottom: 3%;
+  }
+  
+  .btn {
+    display: flex;
+    padding: 10px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    width: 13%;
+    justify-content: center;
+    align-items: center; 
+    margin-right: 3%;
+    height: 30px;
+  }
+  
+</style>
+</head>
+<body>
+<div class="login-box" id="app">
+  <!-- 顶部栏 -->
+  <div class="top-bar"  ref="topBar">
+    <!-- 左侧：主页链接和日期 -->
+    <div>
+      <img src="../static/images/back.png" alt="Home" class="icon" @click="rethis">
+      <img src="../static/images/house.png" alt="Home" class="icon" @click="goToMain"> <!-- 替换为实际的图标路径 -->
+      {% raw %}
+      <span class="date-text"> Schedule Master - 当前时间：{{ formattedDate }} ， {{ todayWeekDay }}</span>
+      {% endraw %}
+    </div>
+    <!-- 右侧：设置和登出 -->
+    <div>
+      <img src="../static/images/user.png" alt="Settings" class="icon" @click="goToSettings"> <!-- 替换为实际的图标路径 -->
+      <button type="button" class="logout-button" @click="logout">登出</button>
+    </div>
+  </div>
+  <!-- 主体内容 -->
+  <div class="main-content" :style="{ height: `calc(100vh - ${topBarHeight}px)` }">
+    <div class="content-title">
+      <span class="body-text">日程管理</span>
+    </div>
+    <div class="content-body">
+      <div class="content-view">
+        <div class="single-schedule" v-for="schedule in schedules" :key="schedule.index">
+            {% raw %}
+            <span class="label-desc">{{ schedule.brief }}</span>
+            {% endraw %}
+            <div class="content-desc">
+              {% raw %}
+              <span class="label-time">始于：{{ schedule.starttime }}</span>
+              <span class="label-time">终于：{{ schedule.endtime }}</span>
+              {% endraw %}
+            </div>
+                  <!-- {{ schedule.starttime }} {{ schedule.endtime }} {{ schedule.id }} -->
+            <button type="button" class="btn" @click="view(schedule.id)">查看/编辑</button>
+            <button type="button" class="btn" @click="delete(schedule.id,schedule.index)">删除</button>
+            <button type="button" class="btn" @click="share(schedule.id)" :disabled=true>分享</button>
+                  <!--<textarea type="text" id="preference" class="input-pref" placeholder="可为空" v-model="inputpref"></textarea>-->
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/vue@next"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script>
+const { createApp } = Vue;
+
+createApp({
+  data() {
+    return {
+      currentDate: new Date(),
+      weekDays: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],  
+      topBarHeight: 0,
+      csrf_token: null,
+      schedules: [
+        /*{ brief: 'Brief 1', starttime: 'Start Time 1', endtime: 'End Time 1', id:1 },
+        { brief: 'Brief 2', starttime: 'Start Time 2', endtime: 'End Time 2', id:2 }, 
+        { brief: 'Brief 1', starttime: 'Start Time 1', endtime: 'End Time 1', id:3 },
+        { brief: 'Brief 2', starttime: 'Start Time 2', endtime: 'End Time 2', id:4 }, 
+        { brief: 'Brief 1', starttime: 'Start Time 1', endtime: 'End Time 1', id:5 },
+        { brief: 'Brief 2', starttime: 'Start Time 2', endtime: 'End Time 2', id:2 }, 
+        { brief: 'Brief 2', starttime: 'Start Time 2', endtime: 'End Time 2', id:2 }, 
+        { brief: 'Brief 2', starttime: 'Start Time 2', endtime: 'End Time 2', id:2 }, 
+        { brief: 'Brief 2', starttime: 'Start Time 2', endtime: 'End Time 2', id:2 },*/ 
+      ],
+    };
+  },
+  created() {
+    this.getCSRFToken();
+    this.getParse();
+  },
+  computed: {
+    formattedDate() {
+      const yyyy = this.currentDate.getFullYear().toString();
+      const mm = (this.currentDate.getMonth() + 1).toString().padStart(2, '0');
+      const dd = this.currentDate.getDate().toString().padStart(2, '0');
+      const hh = this.currentDate.getHours().toString().padStart(2, '0');
+      const min = this.currentDate.getMinutes().toString().padStart(2, '0');
+      const ss = this.currentDate.getSeconds().toString().padStart(2, '0');
+      return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
+    },
+    todayWeekDay() {
+      const now = new Date();
+      const dayOfWeek = now.getDay();
+      const hour = now.getHours();
+      const timeOfDay = hour < 12 ? '上午好' : (hour < 20 ? '下午好' : '晚上好');
+      let greeting = '';
+      if (dayOfWeek === 0 || dayOfWeek === 6) {
+        const weekendGreetings = [
+          '祝您度过一个愉快的周末',
+          '今天也要心情愉快呦',
+          '休息日不要劳累过头呀',
+          '记得劳逸结合呢'
+        ];
+        const randomIndex = Math.floor(Math.random() * weekendGreetings.length);
+        greeting = `周${'日一二三四五六'.charAt(dayOfWeek)}${timeOfDay}，${weekendGreetings[randomIndex]}`;
+      } else if (dayOfWeek === 1 || dayOfWeek === 2) {
+        const weekbeginGreetings = [
+          '新的一周也要努力呀',
+          '新的一周记得元气满满'
+        ];
+        const randomIndex = Math.floor(Math.random() * weekbeginGreetings.length);
+        greeting = `周${'日一二三四五六'.charAt(dayOfWeek)}了，${weekbeginGreetings[randomIndex]}`;
+      } else if (dayOfWeek >= 3 && dayOfWeek <= 5) {
+        // 周三周四周五的问候语
+        greeting = `周${'日一二三四五六'.charAt(dayOfWeek)}了，继续加油哦！`;
+        // 如果是周五下午，则有概率额外显示一句
+        if (dayOfWeek === 5 && hour >= 12) {
+          if (Math.random() < 0.4) { // 50%的概率
+            greeting += '加把劲，马上要周末啦！';
+          }
+        }
+      }
+      return greeting;
+    }
+  },
+  mounted() {
+    this.startClock();
+    this.topBarHeight = this.$refs.topBar.offsetHeight+20;
+  },
+  methods: {
+    startClock() {
+      setInterval(() => {
+        this.currentDate = new Date();
+      }, 1000);
+    },
+    goToMain() {
+      window.location.href = 'main';
+    },
+    goToSettings() {
+      window.location.href = 'settings';
+    },
+    logout() {
+      // 实际应用中应调用后端服务进行登出操作
+      window.location.href = 'login';
+    },
+    rethis() {
+      window.history.back();
+    },
+    async getCSRFToken() {
+      try {
+        // GET request to backend to get csrf_token
+        const response = await axios.get('/csrf_token');
+        this.csrf_token = response.data.csrf_token;
+      } catch (error) {
+        alert('出现网络错误，请尝试刷新页面！');
+      }
+    },
+    async getParse() {
+      try {
+        const response = await axios({
+          method: 'get',
+          url: '/get_schedule_list',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': this.csrf_token,
+          },
+          data: {
+          },
+        });
+        const data = response.data;
+        if (data.success) {
+          let idnum=0;
+          this.schedules = data.all_schedule.map(schedule => {
+            let splitStart = schedule.start_time.split(' ');
+            let splitEnd = schedule.end_time.split(' ');
+            return {
+              id: schedule.schedule_id,
+              brief: schedule.schedule_brief,
+              starttime: schedule.time_type==0?splitStart[0]:schedule.start_time,
+              endtime: schedule.time_type==0?splitEnd[0]:schedule.end_time,
+              index: idnum,
+            };    
+          });
+        } else {
+          alert('出现意外错误！请刷新！');
+        }
+      } catch (error) {
+        const status=error.response?error.response.status:'';
+        const data=error.response?error.response.data:'未知';
+        alert('出现意外错误'+status+'，请重试或联系管理员！');
+        const dataString = JSON.stringify(data, null, 2);
+        alert(dataString);
+      }
+    },
+    view(id) {
+      const params = new URLSearchParams({ from: '2', id: id });
+      window.location.href = `schedule_modification?${params.toString()}`;
+    },
+    async delete(id,index) {
+      if (confirm(`你确定要删除${this.schedules[index].brief.toString()}吗？`)) {
+        try {
+          const response = await axios({
+            method: 'post',
+            url: '/delete_schedule',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': this.csrf_token,
+            },
+            data: {
+              schedule_id: id,
+            },
+          });
+          const data = response.data;
+          if (data.success) {
+            alert('删除成功！');
+            this.schedules.splice(index,1);
+          } else {
+            alert('删除失败！请重试！！');
+          }
+        } catch (error) {
+          const status=error.response?error.response.status:'';
+          const data=error.response?error.response.data:'未知';
+          alert('出现意外错误'+status+'，请重试或联系管理员！');
+          const dataString = JSON.stringify(data, null, 2);
+          alert(dataString);
+        }
+      }
+    }
+  }
+}).mount('#app');
+</script>
+</body>
+</html>
